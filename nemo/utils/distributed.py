@@ -89,9 +89,25 @@ def gather_objects(partial_results_list, main_rank=None):
     # return input when no DDP is used
     if world_size == 1:
         return partial_results_list
-
     gathered_results = [None for _ in range(world_size)]
-    torch.distributed.all_gather_object(gathered_results, partial_results_list)
+    if hasattr(torch.distributed, 'is_ucc_available') and torch.distributed.is_ucc_available():
+        # Store the current backend
+        old_backend = torch.distributed.get_backend()
+        
+        # Temporarily switch to UCC
+        torch.distributed.init_process_group('ucc')
+        
+        # Perform the all_gather_object operation
+        torch.distributed.all_gather_object(gathered_results, partial_results_list)
+        
+        # Switch back to the original backend
+        torch.distributed.destroy_process_group()
+        torch.distributed.init_process_group(old_backend)
+    else:
+        torch.distributed.all_gather_object(gathered_results, partial_results_list)
+
+    # gathered_results = [None for _ in range(world_size)]
+    # torch.distributed.all_gather_object(gathered_results, partial_results_list)
 
     # return None to non-main ranks
     if main_rank is not None:
