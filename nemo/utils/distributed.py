@@ -32,6 +32,7 @@ except (ImportError, ModuleNotFoundError):
 
 def initialize_distributed(args, backend='nccl'):
     """Initialize torch.distributed."""
+    global ucc_backend
     # Get local rank in case it is provided.
     local_rank = args.local_rank
 
@@ -55,6 +56,7 @@ def initialize_distributed(args, backend='nccl'):
     master_port = os.getenv('MASTER_PORT', '6000')
     init_method += master_ip + ':' + master_port
     torch.distributed.init_process_group(backend=backend, world_size=world_size, rank=rank, init_method=init_method)
+    ucc_backend = torch.distributed.new_group(backend='ucc')
     return local_rank, rank, world_size
 
 
@@ -90,21 +92,8 @@ def gather_objects(partial_results_list, main_rank=None):
     if world_size == 1:
         return partial_results_list
     gathered_results = [None for _ in range(world_size)]
-    if hasattr(torch.distributed, 'is_ucc_available') and torch.distributed.is_ucc_available():
-        # Store the current backend
-        old_backend = torch.distributed.get_backend()
-        
-        # Temporarily switch to UCC
-        torch.distributed.init_process_group('ucc')
-        
-        # Perform the all_gather_object operation
-        torch.distributed.all_gather_object(gathered_results, partial_results_list)
-        
-        # Switch back to the original backend
-        torch.distributed.destroy_process_group()
-        torch.distributed.init_process_group(old_backend)
-    else:
-        torch.distributed.all_gather_object(gathered_results, partial_results_list)
+    print("ucc_available : ", hasattr(torch.distributed, 'is_ucc_available'))
+    torch.distributed.all_gather_object(gathered_results, partial_results_list, group=ucc_backend)
 
     # gathered_results = [None for _ in range(world_size)]
     # torch.distributed.all_gather_object(gathered_results, partial_results_list)
